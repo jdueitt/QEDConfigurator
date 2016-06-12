@@ -29,23 +29,41 @@
         android:weightSum="1">
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:text="Messages:"
+            android:id="@+id/textView" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:id="@+id/configureText"
             android:maxLines="10"
             android:scrollbars="vertical"
             android:minLines="10"
-            android:gravity="bottom" />
+            android:gravity="bottom"
+            android:background="@drawable/outline"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:text="Results:"
+            android:id="@+id/textView2" />
 
         <TextView
             android:layout_width="match_parent"
             android:id="@+id/resultText"
-            android:background="@android:color/holo_blue_light"
             android:scrollbars="vertical"
             android:maxLines="10"
             android:layout_height="wrap_content"
             android:minLines="10"
-            android:gravity="bottom" />
+            android:gravity="bottom"
+            android:background="@drawable/outline"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="2dp" />
     </LinearLayout>
 
 </RelativeLayout>
