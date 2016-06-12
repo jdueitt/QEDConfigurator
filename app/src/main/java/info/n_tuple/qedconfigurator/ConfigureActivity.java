@@ -27,7 +27,6 @@ import android.bluetooth.BluetoothSocket;
 public class ConfigureActivity extends AppCompatActivity {
     private TextView _configureText;
     private TextView _resultText;
-    private Button _configureButton;
     private Handler _handler = new Handler();
 
     private static final UUID SerialPortServiceClass_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
@@ -35,7 +34,6 @@ public class ConfigureActivity extends AppCompatActivity {
     private BluetoothDevice _device;
     private BluetoothSocket _socket;
     private InputStream _inputStream;
-    private InputStreamReader _inputStreamReader;
     private OutputStream _outputStream;
 
     private States _state;
@@ -43,7 +41,6 @@ public class ConfigureActivity extends AppCompatActivity {
     private List<byte[]> _packets = new LinkedList<byte[]>();
     private List<String> _packetDescriptions = new LinkedList<String>();
 
-    private Thread _readerThread;
 
 
     enum States {
@@ -62,7 +59,6 @@ public class ConfigureActivity extends AppCompatActivity {
 
         _configureText = (TextView) findViewById(R.id.configureText);
         _resultText = (TextView) findViewById(R.id.resultText);
-        _configureButton = (Button) findViewById(R.id.configureButton);
 
         _resultText.setMovementMethod(new ScrollingMovementMethod());
         _configureText.setMovementMethod(new ScrollingMovementMethod());
@@ -72,37 +68,7 @@ public class ConfigureActivity extends AppCompatActivity {
         _adapter = BluetoothAdapter.getDefaultAdapter();
 
         _configureText.append("Starting configurator...\n");
-        _handler.postDelayed(connectRunnable, 100);
-    }
-
-    public class ReaderThread implements Runnable {
-        @Override
-        public void run() {
-            int read = -1;
-            byte[] buffer = new byte[128];
-
-            while (true)
-            {
-                try
-                {
-                    read = _inputStream.read(buffer, 0, 1);
-                } catch (IOException e) {
-                    break;
-                }
-
-                if (read > 0) {
-                    final String text = new String(buffer);
-
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            _resultText.append(text);
-                        }
-                    });
-                }
-
-            }
-        }
+        _handler.post(connectRunnable);
     }
 
     private void readStream() {
@@ -136,18 +102,13 @@ public class ConfigureActivity extends AppCompatActivity {
 
     private void closeSocketsAndStreams() {
         try {
-            //_inputStreamReader.close();
-            //_inputStreamReader = null;
-
             _inputStream.close();
             _inputStream = null;
 
             _outputStream.close();
             _outputStream = null;
         } catch (IOException e) {
-            String message = new String();
-            message.format("IOException closing sockets and streams: %s\n", e.getMessage());
-            _configureText.append(message);
+            _configureText.append(String.format("IOException closing sockets and streams: %s\n", e.getMessage()));
         }
     }
 
@@ -168,28 +129,22 @@ public class ConfigureActivity extends AppCompatActivity {
                 Set<BluetoothDevice> pairedDevices = _adapter.getBondedDevices();
 
                 if (pairedDevices.size() > 0) {
-                    String message = new String();
-                    message.format("Found %d paired devices. Using the first device.\n", pairedDevices.size());
-                    _configureText.append(message);
-
                     _device = pairedDevices.iterator().next();
 
-                    message.format("Using device %s for configuration.\n", _device.getName());
-                    _configureText.append(message);
+                    _configureText.append(String.format("Found %d paired devices. Using the first device: %s.\n", pairedDevices.size(), _device.getName()));
 
                     try {
-                        _socket = _device.createRfcommSocketToServiceRecord(SerialPortServiceClass_UUID);
-
+                        /* Canceling the discovery makes the connect go faster, for some reason */
                         _adapter.cancelDiscovery();
 
+                        _socket = _device.createRfcommSocketToServiceRecord(SerialPortServiceClass_UUID);
                         _socket.connect();
 
                         _state = States.STATE_CONNECTED;
 
                         _handler.post(configureRunnable);
                     } catch (IOException e) {
-                        message.format("Caught IOException in creating RFCOMM socket: %s. Retrying in 5 seconds.\n", e.getMessage());
-                        _configureText.append(message);
+                        _configureText.append(String.format("Caught IOException in creating RFCOMM socket: %s. Retrying in 5 seconds.\n", e.getMessage()));
 
                         _device = null;
                         _socket = null;
@@ -218,21 +173,15 @@ public class ConfigureActivity extends AppCompatActivity {
                     /* Create the input/output streams */
                     try {
                         _inputStream = _socket.getInputStream();
-                        //_inputStreamReader = new InputStreamReader(_inputStream);
                         _outputStream = _socket.getOutputStream();
                     } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException in creating streams: %s\n", e.getMessage());
-                        _configureText.append(message);
+                        _configureText.append(String.format("Caught IOException in creating streams: %s\n", e.getMessage()));
 
                         closeSocketsAndStreams();
 
                         return;
                     }
                     _configureText.append("Successfully setup input and output streams.\n");
-
-                    //_readerThread = new Thread(new ReaderThread());
-                    //_readerThread.start();
 
                     /* Setup the packets and packet descriptions */
                     _packets.add("$$$".getBytes());
@@ -256,9 +205,7 @@ public class ConfigureActivity extends AppCompatActivity {
                     try {
                         _outputStream.write(packet);
                     } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
-                        _configureText.append(message);
+                        _configureText.append(String.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage()));
 
                         closeSocketsAndStreams();
 
@@ -274,9 +221,7 @@ public class ConfigureActivity extends AppCompatActivity {
                         _packetDescriptions.add("Configuring NEO7P baud rate to 38400bps");
 
                         _state = States.STATE_NEO7_BAUD;
-                        //_state = States.STATE_DONE;
                         _handler.postDelayed(configureRunnable, 2000);
-                        //_handler.post(configureRunnable);
                     } else {
                         _handler.postDelayed(configureRunnable, 2000);
                     }
@@ -294,9 +239,7 @@ public class ConfigureActivity extends AppCompatActivity {
                     try {
                         _outputStream.write(packet);
                     } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
-                        _configureText.append(message);
+                        _configureText.append(String.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage()));
 
                         closeSocketsAndStreams();
 
@@ -334,9 +277,7 @@ public class ConfigureActivity extends AppCompatActivity {
                     try {
                         _outputStream.write(packet);
                     } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
-                        _configureText.append(message);
+                        _configureText.append(String.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage()));
 
                         closeSocketsAndStreams();
 
@@ -370,9 +311,7 @@ public class ConfigureActivity extends AppCompatActivity {
                     try {
                         _outputStream.write(packet);
                     } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
-                        _configureText.append(message);
+                        _configureText.append(String.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage()));
 
                         closeSocketsAndStreams();
 
