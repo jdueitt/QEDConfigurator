@@ -16,17 +16,34 @@
         android:layout_alignParentBottom="true"
         android:layout_alignParentEnd="true"
         android:layout_alignParentRight="true"
-        android:text="@string/configure" />
+        android:text="@string/configure"
+        android:onClick="startConfiguration" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:id="@+id/configureText"
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_alignParentTop="true"
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true"
-        android:layout_above="@+id/configureButton"
-        android:layout_alignRight="@+id/configureButton"
-        android:layout_alignEnd="@+id/configureButton" />
+        android:weightSum="1">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:id="@+id/configureText"
+            android:maxLines="10"
+            android:scrollbars="vertical"
+            android:minLines="10" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:id="@+id/resultText"
+            android:background="@android:color/holo_blue_light"
+            android:scrollbars="vertical"
+            android:maxLines="10"
+            android:layout_height="wrap_content"
+            android:minLines="10" />
+    </LinearLayout>
 
 </RelativeLayout>

@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -12,6 +14,8 @@ import android.net.Uri;
 import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.method.ScrollingMovementMethod;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
@@ -21,6 +25,7 @@ import android.bluetooth.BluetoothSocket;
 
 public class ConfigureActivity extends AppCompatActivity {
     private TextView _configureText;
+    private TextView _resultText;
     private Button _configureButton;
     private Handler _handler = new Handler();
 
@@ -30,10 +35,12 @@ public class ConfigureActivity extends AppCompatActivity {
     private BluetoothSocket _socket;
     private InputStream _inputStream;
     private InputStreamReader _inputStreamReader;
-    private BufferedReader _bufferedReader;
     private OutputStream _outputStream;
 
     private States _state;
+
+    private List<byte[]> _packets = new LinkedList<byte[]>();
+    private List<String> _packetDescriptions = new LinkedList<String>();
 
 
     enum States {
@@ -50,14 +57,20 @@ public class ConfigureActivity extends AppCompatActivity {
         setContentView(R.layout.activity_configure);
 
         _configureText = (TextView) findViewById(R.id.configureText);
+        _resultText = (TextView) findViewById(R.id.resultText);
         _configureButton = (Button) findViewById(R.id.configureButton);
 
-        _configureText.append("Starting configurator...\n");
+        _resultText.setMovementMethod(new ScrollingMovementMethod());
+        _configureText.setMovementMethod(new ScrollingMovementMethod());
+    }
 
+    public void startConfiguration(View view) {
         _adapter = BluetoothAdapter.getDefaultAdapter();
 
-        _handler.postDelayed(connectRunnable, 2000);
+        _configureText.append("Starting configurator...\n");
+        _handler.postDelayed(connectRunnable, 1000);
     }
+
 
     private Runnable connectRunnable = new Runnable() {
         @Override
@@ -94,7 +107,7 @@ public class ConfigureActivity extends AppCompatActivity {
 
                         _state = States.STATE_CONNECTED;
 
-                        _handler.postDelayed(configureRunnable, 1000);
+                        _handler.postDelayed(configureRunnable, 500);
                     } catch (IOException e) {
                         message.format("Caught IOException in creating RFCOMM socket: %s. Retrying in 5 seconds.\n", e.getMessage());
                         _configureText.append(message);
@@ -118,6 +131,7 @@ public class ConfigureActivity extends AppCompatActivity {
         @Override
         public void run() {
             String command = new String();
+            String description = null;
             byte packet[] = null;
             switch (_state) {
                 case STATE_CONNECTED:
@@ -141,16 +155,39 @@ public class ConfigureActivity extends AppCompatActivity {
                         return;
                     }
                     _configureText.append("Successfully setup input and output streams.\n");
+
+                    /* Setup the packets and packet descriptions */
+                    _packets.add("$$$\r".getBytes());
+                    _packetDescriptions.add("Entering command mode on RN42");
+                    _packets.add("U,9600,N\r".getBytes());
+                    _packetDescriptions.add("Setting temporary baud rate to 9600,N on RN42");
+
                     _state = States.STATE_RN42_CMD_9600;
-                    _handler.postDelayed(configureRunnable, 1000);
+                    _handler.postDelayed(configureRunnable, 500);
                     break;
+
                 case STATE_RN42_CMD_9600:
-                    command = "$$$\r";
+                    packet = _packets.get(0);
+                    description = _packetDescriptions.get(0);
+
+                    _packets.remove(0);
+                    _packetDescriptions.remove(0);
+
                     try {
-                        _outputStream.write(command.getBytes());
+                        _inputStreamReader.skip(5000);
+                        _outputStream.write(packet);
+                        if (_inputStreamReader.ready()) {
+                            char[] buffer = new char[500];
+                            int read = _inputStreamReader.read(buffer, 0, 500);
+                            _resultText.append(new String(buffer), 0, read-1);
+                            while (_inputStreamReader.ready() && read == 500) {
+                                read = _inputStreamReader.read(buffer, 0, 500);
+                                _resultText.append(new String(buffer), 0, read-1);
+                            }
+                        }
                     } catch (IOException e) {
                         String message = new String();
-                        message.format("Caught IOException in entering command mode on RN42: %s\n", e.getMessage());
+                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
                         _configureText.append(message);
 
                         _inputStreamReader = null;
@@ -162,39 +199,43 @@ public class ConfigureActivity extends AppCompatActivity {
 
                         return;
                     }
-                    _configureText.append("Sent $$$ to enter command mode on RN42\n");
-                    command = "U,9600,N\r";
-                    try {
-                        _outputStream.write(command.getBytes());
-                    } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException setting temporary baud rate to 9600,N on RN42: %s\n", e.getMessage());
-                        _configureText.append(message);
+                    _configureText.append(description + "\n");
 
-                        _inputStreamReader = null;
-                        _inputStream = null;
-                        _outputStream = null;
-                        _socket = null;
-                        _device = null;
-                        _adapter = null;
+                    if (_packets.size() == 0) {
+                        _packets.add(new byte[]{
+                                (byte) 0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00,
+                                (byte) 0xD0, 0x08, 0x00, 0x00, 0x00, (byte) 0x96, 0x00, 0x00, 0x07, 0x00,
+                                0x03, 0x00, 0x00, 0x00, 0x00, 0x00, (byte) 0x93, (byte) 0x90});
+                        _packetDescriptions.add("Configuring NEO7P baud rate to 38400bps");
 
-                        return;
+                        _state = States.STATE_NEO7_BAUD;
+                        _handler.postDelayed(configureRunnable, 5000);
+                    } else {
+                        _handler.postDelayed(configureRunnable, 2000);
                     }
-                    _configureText.append("Sent U,9600,N to set temporary baud rate on RN42\n");
-
-                    _state = States.STATE_NEO7_BAUD;
-                    _handler.postDelayed(configureRunnable, 1000);
                     break;
+
                 case STATE_NEO7_BAUD:
-                    packet = new byte[] {
-                            (byte)0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00,
-                            (byte)0xD0, 0x08, 0x00, 0x00, 0x00, (byte)0x96, 0x00, 0x00, 0x07, 0x00,
-                            0x03, 0x00, 0x00, 0x00, 0x00, 0x00, (byte)0x93, (byte)0x90};
+                    packet = _packets.get(0);
+                    description = _packetDescriptions.get(0);
+
+                    _packets.remove(0);
+                    _packetDescriptions.remove(0);
+
                     try {
                         _outputStream.write(packet);
+                        if (_inputStreamReader.ready()) {
+                            char[] buffer = new char[500];
+                            int read = _inputStreamReader.read(buffer, 0, 500);
+                            _resultText.append(new String(buffer), 0, read-1);
+                            while (_inputStreamReader.ready() && read == 500) {
+                                read = _inputStreamReader.read(buffer, 0, 500);
+                                _resultText.append(new String(buffer), 0, read-1);
+                            }
+                        }
                     } catch (IOException e) {
                         String message = new String();
-                        message.format("Caught IOException sending packet to configure UART1 baud rate to 38400: %s\n", e.getMessage());
+                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
                         _configureText.append(message);
 
                         _inputStreamReader = null;
@@ -206,96 +247,47 @@ public class ConfigureActivity extends AppCompatActivity {
 
                         return;
                     }
-                    _configureText.append("Sent packet to set UART1 baud rate on NEO7P to 38400\n");
-                    _state = States.STATE_RN42_CMD_38400;
-                    _handler.postDelayed(configureRunnable, 1000);
+                    _configureText.append(description + "\n");
+
+                    if (_packets.size() == 0) {
+                        _packets.add("$$$\r".getBytes());
+                        _packetDescriptions.add("Entering command mode on RN42");
+
+                        _packets.add("SU,38400\r".getBytes());
+                        _packetDescriptions.add("Setting permanent baud rate to 38,400bps");
+
+                        _packets.add("U,38.4K,N\r".getBytes());
+                        _packetDescriptions.add("Setting the temporary baud rate to 38,400bps");
+
+                        _state = States.STATE_RN42_CMD_38400;
+
+                        _handler.postDelayed(configureRunnable, 5000);
+                    } else {
+                        _handler.postDelayed(configureRunnable, 2000);
+                    }
                     break;
+
                 case STATE_RN42_CMD_38400:
-                    command = "$$$\r";
-                    try {
-                        _outputStream.write(command.getBytes());
-                    } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException in entering command mode on RN42: %s\n", e.getMessage());
-                        _configureText.append(message);
+                    packet = _packets.get(0);
+                    description = _packetDescriptions.get(0);
 
-                        _inputStreamReader = null;
-                        _inputStream = null;
-                        _outputStream = null;
-                        _socket = null;
-                        _device = null;
-                        _adapter = null;
+                    _packets.remove(0);
+                    _packetDescriptions.remove(0);
 
-                        return;
-                    }
-                    _configureText.append("Sent $$$ to enter command mode on RN42\n");
-                    command = "U,38.4K,N\r";
-                    try {
-                        _outputStream.write(command.getBytes());
-                    } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException setting temporary baud rate to 38.4,N on RN42: %s\n", e.getMessage());
-                        _configureText.append(message);
-
-                        _inputStreamReader = null;
-                        _inputStream = null;
-                        _outputStream = null;
-                        _socket = null;
-                        _device = null;
-                        _adapter = null;
-
-                        return;
-                    }
-                    _configureText.append("Sent U,38.4,N to set temporary baud rate on RN42\n");
-                    command = "SU,38400\r";
-                    try {
-                        _outputStream.write(command.getBytes());
-                    } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException setting permanent baud rate to 38.4K on RN42: %s\n", e.getMessage());
-                        _configureText.append(message);
-
-                        _inputStreamReader = null;
-                        _inputStream = null;
-                        _outputStream = null;
-                        _socket = null;
-                        _device = null;
-                        _adapter = null;
-
-                        return;
-                    }
-                    _configureText.append("Sent SU,38400 to set permanent baud rate on RN42\n");
-                    command = "---";
-                    try {
-                        _outputStream.write(command.getBytes());
-                    } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException leaving command mode on RN42: %s\n", e.getMessage());
-                        _configureText.append(message);
-
-                        _inputStreamReader = null;
-                        _inputStream = null;
-                        _outputStream = null;
-                        _socket = null;
-                        _device = null;
-                        _adapter = null;
-
-                        return;
-                    }
-                    _configureText.append("Sent --- to exit command mode on RN42\n");
-                    _state = States.STATE_NEO7_SAVE;
-                    _handler.postDelayed(configureRunnable, 1000);
-                    break;
-                case STATE_NEO7_SAVE:
-                    packet = new byte[] {
-                            (byte)0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00,
-                            (byte)0xFF, (byte)0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x1D,
-                            (byte)0xAB};
                     try {
                         _outputStream.write(packet);
+                        if (_inputStreamReader.ready()) {
+                            char[] buffer = new char[500];
+                            int read = _inputStreamReader.read(buffer, 0, 500);
+                            _resultText.append(new String(buffer), 0, read-1);
+                            while (_inputStreamReader.ready() && read == 500) {
+                                read = _inputStreamReader.read(buffer, 0, 500);
+                                _resultText.append(new String(buffer), 0, read-1);
+                            }
+                        }
                     } catch (IOException e) {
                         String message = new String();
-                        message.format("Caught IOException sending packet to save NEO7 configuration: %s\n", e.getMessage());
+                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
                         _configureText.append(message);
 
                         _inputStreamReader = null;
@@ -307,14 +299,79 @@ public class ConfigureActivity extends AppCompatActivity {
 
                         return;
                     }
-                    _configureText.append("Sent packet to save configuration to BBR and FLASH on NEO7P\n");
+                    _configureText.append(description + "\n");
 
-                    _inputStreamReader = null;
-                    _inputStream = null;
-                    _outputStream = null;
-                    _socket = null;
-                    _device = null;
-                    _adapter = null;
+                    if (_packets.size() == 0) {
+                        _packets.add(new byte[]{
+                                (byte) 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                (byte) 0xFF, (byte) 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x1D,
+                                (byte) 0xAB});
+                        _packetDescriptions.add("Saving NEO7P configuration to BBR and Flash.");
+
+                        _state = States.STATE_NEO7_SAVE;
+                        _handler.postDelayed(configureRunnable, 5000);
+                    } else {
+                        _handler.postDelayed(configureRunnable, 2000);
+                    }
+                    break;
+
+                case STATE_NEO7_SAVE:
+                    packet = _packets.get(0);
+                    description = _packetDescriptions.get(0);
+
+                    _packets.remove(0);
+                    _packetDescriptions.remove(0);
+
+                    try {
+                        _outputStream.write(packet);
+                        if (_inputStreamReader.ready()) {
+                            char[] buffer = new char[500];
+                            int read = _inputStreamReader.read(buffer, 0, 500);
+                            _resultText.append(new String(buffer), 0, read-1);
+                            while (_inputStreamReader.ready() && read == 500) {
+                                read = _inputStreamReader.read(buffer, 0, 500);
+                                _resultText.append(new String(buffer), 0, read-1);
+                            }
+                        }
+                    } catch (IOException e) {
+                        String message = new String();
+                        message.format("Caught IOException while\n\t%s:\n\t%s\n", description, e.getMessage());
+                        _configureText.append(message);
+
+                        _inputStreamReader = null;
+                        _inputStream = null;
+                        _outputStream = null;
+                        _socket = null;
+                        _device = null;
+                        _adapter = null;
+
+                        return;
+                    }
+                    _configureText.append(description + "\n");
+
+                    if (_packets.size() == 0) {
+                        try {
+                            _inputStreamReader.close();
+                            _inputStreamReader = null;
+                            _inputStream.close();
+                            _inputStream = null;
+                            _outputStream.close();
+                            _outputStream = null;
+                            _socket.close();
+                        } catch (IOException e) {
+                            String message = new String();
+                            message.format("Caught IOException while closing streams and socket:\n\t%s\n", e.getMessage());
+                            _configureText.append(message);
+                        }
+
+                        _socket = null;
+                        _device = null;
+                        _adapter = null;
+
+                        _configureText.append("Done!");
+                    } else {
+                        _handler.postDelayed(configureRunnable, 2000);
+                    }
 
                     break;
             }
