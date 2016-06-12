@@ -65,8 +65,13 @@ public class ConfigureActivity extends AppCompatActivity {
             if (_adapter == null) {
                 _configureText.append("No Bluetooth adapter found, aborting.\n");
                 return;
+            } else if (!_adapter.isEnabled()) {
+                _configureText.append("Bluetooth adapter found, but it is disabled. Aborting.\n");
+                return;
             } else if (_adapter.isEnabled()) {
                 _configureText.append("Bluetooth enabled, checking for paired devices...\n");
+
+                _adapter.startDiscovery();
 
                 Set<BluetoothDevice> pairedDevices = _adapter.getBondedDevices();
 
@@ -81,9 +86,10 @@ public class ConfigureActivity extends AppCompatActivity {
                     _configureText.append(message);
 
                     try {
+                        _socket = _device.createRfcommSocketToServiceRecord(SerialPortServiceClass_UUID);
+
                         _adapter.cancelDiscovery();
 
-                        _socket = _device.createRfcommSocketToServiceRecord(SerialPortServiceClass_UUID);
                         _socket.connect();
 
                         _state = States.STATE_CONNECTED;
@@ -100,7 +106,7 @@ public class ConfigureActivity extends AppCompatActivity {
                         _handler.postDelayed(connectRunnable, 5000);
                     }
                 } else {
-                    _configureText.append("No bluetooth devices found. Retrying in 5 seconds.\n");
+                    _configureText.append("No paired bluetooth devices found. Retrying in 5 seconds.\n");
 
                     _handler.postDelayed(connectRunnable, 5000);
                 }
@@ -175,32 +181,15 @@ public class ConfigureActivity extends AppCompatActivity {
                         return;
                     }
                     _configureText.append("Sent U,9600,N to set temporary baud rate on RN42\n");
-                    command = "---";
-                    try {
-                        _outputStream.write(command.getBytes());
-                    } catch (IOException e) {
-                        String message = new String();
-                        message.format("Caught IOException leaving command mode on RN42: %s\n", e.getMessage());
-                        _configureText.append(message);
 
-                        _inputStreamReader = null;
-                        _inputStream = null;
-                        _outputStream = null;
-                        _socket = null;
-                        _device = null;
-                        _adapter = null;
-
-                        return;
-                    }
-                    _configureText.append("Sent --- to exit command mode on RN42\n");
                     _state = States.STATE_NEO7_BAUD;
                     _handler.postDelayed(configureRunnable, 1000);
                     break;
                 case STATE_NEO7_BAUD:
                     packet = new byte[] {
                             (byte)0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00,
-                            (byte)0xD0, 0x08, 0x00, 0x00, (byte)0x80, 0x25, 0x00, 0x00, 0x07, 0x00,
-                            0x03, 0x00, 0x00, 0x00, 0x00, 0x00, (byte)0xA2, (byte)0xB5};
+                            (byte)0xD0, 0x08, 0x00, 0x00, 0x00, (byte)0x96, 0x00, 0x00, 0x07, 0x00,
+                            0x03, 0x00, 0x00, 0x00, 0x00, 0x00, (byte)0x93, (byte)0x90};
                     try {
                         _outputStream.write(packet);
                     } catch (IOException e) {
@@ -240,7 +229,7 @@ public class ConfigureActivity extends AppCompatActivity {
                         return;
                     }
                     _configureText.append("Sent $$$ to enter command mode on RN42\n");
-                    command = "U,38.4,N\r";
+                    command = "U,38.4K,N\r";
                     try {
                         _outputStream.write(command.getBytes());
                     } catch (IOException e) {
