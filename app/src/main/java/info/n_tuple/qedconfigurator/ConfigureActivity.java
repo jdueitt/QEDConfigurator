@@ -41,6 +41,8 @@ public class ConfigureActivity extends AppCompatActivity {
     private List<byte[]> _packets = new LinkedList<byte[]>();
     private List<String> _packetDescriptions = new LinkedList<String>();
 
+    private int _doneIterations = 10; /* 10 iterations at 2 iterations per second */
+
 
 
     enum States {
@@ -142,7 +144,7 @@ public class ConfigureActivity extends AppCompatActivity {
 
                         _state = States.STATE_CONNECTED;
 
-                        _handler.post(configureRunnable);
+                        _handler.postDelayed(configureRunnable, 100);
                     } catch (IOException e) {
                         _configureText.append(String.format("Caught IOException in creating RFCOMM socket: %s. Retrying in 5 seconds.\n", e.getMessage()));
 
@@ -320,17 +322,28 @@ public class ConfigureActivity extends AppCompatActivity {
                     _configureText.append(description + "\n");
 
                     if (_packets.size() == 0) {
-                        closeSocketsAndStreams();
-
                         _configureText.append("Done!");
+
+                        _doneIterations = 10; /* 10 iterations at 2 iterations per second */
+
+                        _state = States.STATE_DONE;
+                        _handler.post(configureRunnable);
                     } else {
                         _handler.postDelayed(configureRunnable, 2000);
                     }
 
                     break;
                 case STATE_DONE:
-                    readStream();
-                    _handler.postDelayed(configureRunnable, 500);
+                    if (_doneIterations > 0) {
+                        --_doneIterations;
+
+                        readStream();
+                        _handler.postDelayed(configureRunnable, 500);
+                    }
+                    else
+                    {
+                        closeSocketsAndStreams();
+                    }
                     break;
             }
         }
