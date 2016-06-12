@@ -34,7 +34,8 @@
             android:id="@+id/configureText"
             android:maxLines="10"
             android:scrollbars="vertical"
-            android:minLines="10" />
+            android:minLines="10"
+            android:gravity="bottom" />
 
         <TextView
             android:layout_width="match_parent"
@@ -43,7 +44,8 @@
             android:scrollbars="vertical"
             android:maxLines="10"
             android:layout_height="wrap_content"
-            android:minLines="10" />
+            android:minLines="10"
+            android:gravity="bottom" />
     </LinearLayout>
 
 </RelativeLayout>
